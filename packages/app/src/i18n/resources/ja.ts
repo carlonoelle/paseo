@@ -1198,6 +1198,20 @@ export const ja: TranslationResources = {
         label: "プロジェクト",
         all: "すべてのプロジェクト",
       },
+      view: {
+        label: "ビュー",
+        heading: "ビュー",
+        all: "すべてのワークスペース",
+        save: "ビューとして保存",
+        saveConfirm: "ビューを保存",
+        name: "ビュー名",
+        rename: "ビューの名前を変更",
+        renameConfirm: "名前を変更",
+        delete: "ビューを削除",
+        deleteMessage:
+          '"{{name}}"を削除しますか？サイドバーはすべてのワークスペースの表示に戻ります。',
+        deleteConfirm: "削除",
+      },
     },
     filterEmpty: {
       title: "一致するワークスペースがありません",

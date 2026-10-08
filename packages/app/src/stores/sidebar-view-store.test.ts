@@ -36,6 +36,8 @@ describe("sidebar view store", () => {
       hostFilters: [],
       projectFilters: [],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -88,6 +90,8 @@ describe("sidebar view store", () => {
       hostFilters: [],
       projectFilters: [],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -102,6 +106,8 @@ describe("sidebar view store", () => {
       hostFilters: ["host-a"],
       projectFilters: [],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -116,6 +122,8 @@ describe("sidebar view store", () => {
       hostFilters: ["host-a", "host-b"],
       projectFilters: [],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -132,6 +140,8 @@ describe("sidebar view store", () => {
       groupMode: "status",
       hostFilters: ["host-a"],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -226,6 +236,8 @@ describe("sidebar view store", () => {
       hostFilters: ["host-a"],
       projectFilters: ["project-a", "project-b"],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -235,6 +247,8 @@ describe("sidebar view store", () => {
       hostFilters: [],
       projectFilters: [],
       labelFilter: { labels: [] },
+      savedViews: [],
+      activeViewId: null,
     });
   });
 
@@ -279,5 +293,161 @@ describe("sidebar view store", () => {
       }),
     );
     expect(storage.reads).toEqual(["sidebar-view"]);
+  });
+
+  describe("saved views", () => {
+    const state = () => useSidebarViewStore.getState();
+
+    it("saves the current filters under a trimmed name and makes the view active", () => {
+      useSidebarViewStore.setState({
+        hostFilters: ["host-a"],
+        projectFilters: ["project-a", "project-b"],
+        labelFilter: { labels: ["urgent"] },
+      });
+
+      state().saveView("  Freelance ");
+
+      const [view] = state().savedViews;
+      expect(view).toMatchObject({
+        name: "Freelance",
+        hostFilters: ["host-a"],
+        projectFilters: ["project-a", "project-b"],
+        labelFilter: { labels: ["urgent"] },
+      });
+      expect(state().activeViewId).toBe(view.id);
+    });
+
+    it("ignores a blank name", () => {
+      state().saveView("   ");
+
+      expect(state().savedViews).toEqual([]);
+      expect(state().activeViewId).toBeNull();
+    });
+
+    it("writes filter changes through to the active view only", () => {
+      state().toggleProjectFilter("project-a");
+      state().saveView("Freelance");
+      const freelanceId = state().activeViewId;
+      state().selectView(null);
+      state().toggleProjectFilter("project-b");
+      state().saveView("Job");
+
+      state().selectView(freelanceId);
+      state().toggleProjectFilter("project-c");
+      state().toggleHostFilter("host-a");
+      state().toggleLabelFilter("Urgent");
+
+      const [freelance, job] = state().savedViews;
+      expect(freelance).toMatchObject({
+        projectFilters: ["project-a", "project-c"],
+        hostFilters: ["host-a"],
+        labelFilter: { labels: ["urgent"] },
+      });
+      expect(job).toMatchObject({
+        projectFilters: ["project-b"],
+        hostFilters: [],
+        labelFilter: { labels: [] },
+      });
+    });
+
+    it("loads a view's filters when it is selected", () => {
+      useSidebarViewStore.setState({ projectFilters: ["project-a"] });
+      state().saveView("Freelance");
+      state().selectView(null);
+      useSidebarViewStore.setState({ projectFilters: ["project-z"], hostFilters: ["host-z"] });
+
+      state().selectView(state().savedViews[0].id);
+
+      expect(state()).toMatchObject({
+        projectFilters: ["project-a"],
+        hostFilters: [],
+        labelFilter: { labels: [] },
+      });
+    });
+
+    it("clears every filter when leaving a view", () => {
+      useSidebarViewStore.setState({ projectFilters: ["project-a"], hostFilters: ["host-a"] });
+      state().saveView("Freelance");
+
+      state().selectView(null);
+
+      expect(state()).toMatchObject({
+        activeViewId: null,
+        hostFilters: [],
+        projectFilters: [],
+        labelFilter: { labels: [] },
+      });
+      expect(state().savedViews[0].projectFilters).toEqual(["project-a"]);
+    });
+
+    it("leaves ad-hoc filter changes out of every view", () => {
+      state().saveView("Freelance");
+      state().selectView(null);
+
+      state().toggleProjectFilter("project-a");
+
+      expect(state().savedViews[0].projectFilters).toEqual([]);
+    });
+
+    it("renames a view without touching its filters", () => {
+      useSidebarViewStore.setState({ projectFilters: ["project-a"] });
+      state().saveView("Freelance");
+      const id = state().savedViews[0].id;
+
+      state().renameView(id, " Clients ");
+      state().renameView(id, "  ");
+
+      expect(state().savedViews[0]).toMatchObject({
+        name: "Clients",
+        projectFilters: ["project-a"],
+      });
+    });
+
+    it("clears the filters when the active view is deleted", () => {
+      useSidebarViewStore.setState({ projectFilters: ["project-a"] });
+      state().saveView("Freelance");
+
+      state().deleteView(state().savedViews[0].id);
+
+      expect(state()).toMatchObject({ savedViews: [], activeViewId: null, projectFilters: [] });
+    });
+
+    it("keeps the current filters when an inactive view is deleted", () => {
+      state().saveView("Freelance");
+      const freelanceId = state().savedViews[0].id;
+      state().selectView(null);
+      state().toggleProjectFilter("project-a");
+
+      state().deleteView(freelanceId);
+
+      expect(state()).toMatchObject({
+        savedViews: [],
+        activeViewId: null,
+        projectFilters: ["project-a"],
+      });
+    });
+
+    it("carries saved views through the version migration", () => {
+      const view = {
+        id: "view-a",
+        name: "Freelance",
+        hostFilters: [],
+        projectFilters: ["project-a"],
+        labelFilter: { labels: [" Urgent "] },
+      };
+
+      expect(migrateSidebarViewState({ savedViews: [view], activeViewId: "view-a" })).toMatchObject(
+        {
+          savedViews: [{ ...view, labelFilter: { labels: ["urgent"] } }],
+          activeViewId: "view-a",
+        },
+      );
+    });
+
+    it("drops an active view id that names no saved view", () => {
+      expect(
+        migrateSidebarViewState({ savedViews: [], activeViewId: "missing" }).activeViewId,
+      ).toBeNull();
+    });
   });
 });

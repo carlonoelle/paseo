@@ -1202,6 +1202,20 @@ export const ru: TranslationResources = {
         label: "Проект",
         all: "Все проекты",
       },
+      view: {
+        label: "Вид",
+        heading: "Виды",
+        all: "Все рабочие пространства",
+        save: "Сохранить как вид",
+        saveConfirm: "Сохранить вид",
+        name: "Название вида",
+        rename: "Переименовать вид",
+        renameConfirm: "Переименовать",
+        delete: "Удалить вид",
+        deleteMessage:
+          "Удалить вид «{{name}}»? Боковая панель снова покажет все рабочие пространства.",
+        deleteConfirm: "Удалить",
+      },
     },
     filterEmpty: {
       title: "Нет подходящих рабочих пространств",

@@ -21,9 +21,12 @@ import {
   GitBranch,
   GitPullRequest,
   Globe,
+  Pencil,
+  Plus,
   Server,
   Settings2,
   Tag,
+  Trash2,
   Type,
 } from "lucide-react-native";
 import {
@@ -32,9 +35,13 @@ import {
   MenuSeparator,
   MenuSubTrigger,
   MenuSurface,
+  MenuTextField,
   MenuTrigger,
+  useMenuContext,
   type MenuPageDefinition,
 } from "@/components/ui/menu";
+import { SidebarViewOption } from "@/components/sidebar/view-switcher";
+import { confirmDialog } from "@/utils/confirm-dialog";
 import { HostStatusDot } from "@/components/host-status-dot";
 import { isWeb } from "@/constants/platform";
 import { useHosts } from "@/runtime/host-runtime";
@@ -47,8 +54,10 @@ import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
 import type { Theme } from "@/styles/theme";
 import {
   hasActiveSidebarLabelFilter,
+  normalizeSidebarViewName,
   SIDEBAR_UNLABELLED_LABEL_KEY,
   type SidebarGroupMode,
+  type SidebarSavedView,
 } from "@/stores/sidebar-view-store";
 import { workspaceLabelKey, type WorkspaceLabelColor } from "@getpaseo/protocol/workspace-labels";
 import type { WorkspaceTitleSource } from "@/hooks/use-settings";
@@ -69,6 +78,16 @@ const ThemedCircle = withUnistyles(Circle);
 /** Fits the item's 16pt leading slot with a hair of room, matching the trailing check. */
 const OPTION_ICON_SIZE = 14;
 const MENU_WIDTH = 232;
+
+const VIEWS_PAGE_ID = "views";
+const VIEW_SAVE_PAGE_ID = "viewSave";
+const VIEW_RENAME_PAGE_ID = "viewRename";
+const ThemedPlus = withUnistyles(Plus);
+const SAVE_VIEW_LEADING = <ThemedPlus size={OPTION_ICON_SIZE} uniProps={mutedIconMapping} />;
+const ThemedPencil = withUnistyles(Pencil);
+const RENAME_VIEW_LEADING = <ThemedPencil size={OPTION_ICON_SIZE} uniProps={mutedIconMapping} />;
+const ThemedTrash2 = withUnistyles(Trash2);
+const DELETE_VIEW_LEADING = <ThemedTrash2 size={OPTION_ICON_SIZE} uniProps={mutedIconMapping} />;
 
 /**
  * Unlabelled's stand-in for a color dot: the same circle at the same size, hollow.
@@ -188,6 +207,19 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
   // catalog only counts hosts that are online, so a host dropping off would otherwise take away
   // the only way back to a filter that is still hiding workspaces.
   const showLabelFilter = labels.length > 0 || hasActiveSidebarLabelFilter(preferences.labelFilter);
+  // A view is a set of filters, so it earns a row once there is something to filter by.
+  const showViews =
+    showHostFilter || showProjectFilter || showLabelFilter || preferences.savedViews.length > 0;
+  const activeView =
+    preferences.savedViews.find((view) => view.id === preferences.activeViewId) ?? null;
+  const { renameView } = preferences;
+  const activeViewId = activeView?.id ?? null;
+  const renameActiveView = useCallback(
+    (name: string) => {
+      if (activeViewId !== null) renameView(activeViewId, name);
+    },
+    [activeViewId, renameView],
+  );
 
   const pages = useMemo<MenuPageDefinition[]>(() => {
     const definitions: MenuPageDefinition[] = [
@@ -240,6 +272,44 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
       },
     ];
 
+    if (showViews) {
+      definitions.push(
+        {
+          id: VIEWS_PAGE_ID,
+          title: t("sidebar.display.view.heading"),
+          content: <ViewsPage preferences={preferences} activeView={activeView} />,
+        },
+        {
+          id: VIEW_SAVE_PAGE_ID,
+          title: t("sidebar.display.view.save"),
+          // A page you type into is not one the pointer opens or dismisses on its own.
+          hoverIntent: false,
+          content: (
+            <ViewNamePage
+              confirmLabel={t("sidebar.display.view.saveConfirm")}
+              onSubmit={preferences.saveView}
+              testIDPrefix="sidebar-view-save"
+            />
+          ),
+        },
+      );
+      if (activeView) {
+        definitions.push({
+          id: VIEW_RENAME_PAGE_ID,
+          title: t("sidebar.display.view.rename"),
+          hoverIntent: false,
+          content: (
+            <ViewNamePage
+              key={activeView.id}
+              initialValue={activeView.name}
+              confirmLabel={t("sidebar.display.view.renameConfirm")}
+              onSubmit={renameActiveView}
+              testIDPrefix="sidebar-view-rename"
+            />
+          ),
+        });
+      }
+    }
     if (showHostFilter) {
       definitions.push({
         id: "hostFilter",
@@ -274,6 +344,9 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
     t,
     preferences,
     hosts,
+    showViews,
+    activeView,
+    renameActiveView,
     showHostFilter,
     showProjectFilter,
     allProjects,
@@ -318,6 +391,18 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
           <MenuSubTrigger id="show" testID="sidebar-display-show">
             {t("sidebar.display.show.label")}
           </MenuSubTrigger>
+          {showViews ? (
+            <>
+              <MenuSeparator />
+              <MenuSubTrigger
+                id={VIEWS_PAGE_ID}
+                value={activeView?.name}
+                testID="sidebar-display-views"
+              >
+                {t("sidebar.display.view.label")}
+              </MenuSubTrigger>
+            </>
+          ) : null}
           {showHostFilter ? (
             <>
               <MenuSeparator />
@@ -362,6 +447,118 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
         </MenuSurface>
       </MenuRoot>
       <WorkspaceLabelManagerModal visible={managerOpen} onClose={closeManager} />
+    </>
+  );
+}
+
+/**
+ * The saved views, then what you can do with them.
+ *
+ * Rename and Delete act on the active view only: it is the one whose name is on screen, so there
+ * is no question which view they mean.
+ */
+function ViewsPage({
+  preferences,
+  activeView,
+}: {
+  preferences: Preferences;
+  activeView: SidebarSavedView | null;
+}): ReactElement {
+  const { t } = useTranslation();
+  const { savedViews, selectView, deleteView } = preferences;
+
+  const handleDelete = useCallback(async () => {
+    if (!activeView) return;
+    const confirmed = await confirmDialog({
+      title: t("sidebar.display.view.delete"),
+      message: t("sidebar.display.view.deleteMessage", { name: activeView.name }),
+      confirmLabel: t("sidebar.display.view.deleteConfirm"),
+      cancelLabel: t("common.actions.cancel"),
+      destructive: true,
+    });
+    if (confirmed) deleteView(activeView.id);
+  }, [activeView, deleteView, t]);
+
+  return (
+    <>
+      {savedViews.map((view) => (
+        <SidebarViewOption
+          key={view.id}
+          view={view}
+          selected={view.id === activeView?.id}
+          leaveOnReselect
+          onSelect={selectView}
+        />
+      ))}
+      {savedViews.length > 0 ? <MenuSeparator /> : null}
+      <MenuSubTrigger id={VIEW_SAVE_PAGE_ID} leading={SAVE_VIEW_LEADING} testID="sidebar-view-save">
+        {t("sidebar.display.view.save")}
+      </MenuSubTrigger>
+      {activeView ? (
+        <>
+          <MenuSubTrigger
+            id={VIEW_RENAME_PAGE_ID}
+            leading={RENAME_VIEW_LEADING}
+            testID="sidebar-view-rename"
+          >
+            {t("sidebar.display.view.rename")}
+          </MenuSubTrigger>
+          <MenuItem
+            leading={DELETE_VIEW_LEADING}
+            onSelect={handleDelete}
+            testID="sidebar-view-delete"
+          >
+            {t("sidebar.display.view.delete")}
+          </MenuItem>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/** Naming a view, for both saving a new one and renaming the active one. */
+function ViewNamePage({
+  initialValue = "",
+  confirmLabel,
+  onSubmit,
+  testIDPrefix,
+}: {
+  initialValue?: string;
+  confirmLabel: string;
+  onSubmit: (name: string) => void;
+  testIDPrefix: string;
+}): ReactElement {
+  const { t } = useTranslation();
+  const menu = useMenuContext("ViewNamePage");
+  const [name, setName] = useState(initialValue);
+  const valid = normalizeSidebarViewName(name).length > 0;
+
+  const submit = useCallback(() => {
+    if (!valid) return;
+    onSubmit(name);
+    menu.goBack();
+  }, [menu, name, onSubmit, valid]);
+
+  return (
+    <>
+      <MenuTextField
+        initialValue={initialValue}
+        onChangeText={setName}
+        placeholder={t("sidebar.display.view.name")}
+        accessibilityLabel={t("sidebar.display.view.name")}
+        autoFocus
+        onSubmitEditing={submit}
+        testID={`${testIDPrefix}-name`}
+      />
+      <MenuSeparator />
+      <MenuItem
+        disabled={!valid}
+        closeOnSelect={false}
+        onSelect={submit}
+        testID={`${testIDPrefix}-submit`}
+      >
+        {confirmLabel}
+      </MenuItem>
     </>
   );
 }

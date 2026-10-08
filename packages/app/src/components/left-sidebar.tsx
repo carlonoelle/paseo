@@ -22,6 +22,7 @@ import {
 } from "@/components/sidebar-resize-handle-layout";
 import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
+import { SidebarViewSwitcher } from "@/components/sidebar/view-switcher";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
@@ -809,9 +810,14 @@ function DesktopSidebar({
 }
 
 function WorkspacesSectionHeader() {
+  const hasSavedViews = useSidebarViewStore((state) => state.savedViews.length > 0);
   return (
     <View style={styles.workspacesSectionHeader}>
-      <Text style={styles.workspacesSectionTitle}>Workspaces</Text>
+      {hasSavedViews ? (
+        <SidebarViewSwitcher title="Workspaces" />
+      ) : (
+        <Text style={styles.workspacesSectionTitle}>Workspaces</Text>
+      )}
       <View style={styles.workspacesSectionActions}>
         <Tooltip delayDuration={300}>
           <TooltipTrigger asChild>

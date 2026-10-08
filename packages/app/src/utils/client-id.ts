@@ -56,7 +56,7 @@ export function createClientIdResolver(deps: {
   };
 }
 
-function generateUuidFromGlobalCrypto(): string {
+export function generateUuidFromGlobalCrypto(): string {
   const cryptoObj = globalThis.crypto;
   if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
     return cryptoObj.randomUUID().replace(/-/g, "");

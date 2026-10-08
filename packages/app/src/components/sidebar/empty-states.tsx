@@ -40,13 +40,20 @@ export function SidebarFilterEmptyState() {
   const { t } = useTranslation();
   const clearLabelFilter = useSidebarViewStore((state) => state.clearLabelFilter);
   const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
+  const activeViewId = useSidebarViewStore((state) => state.activeViewId);
+  const selectView = useSidebarViewStore((state) => state.selectView);
   // Clears every filter that can empty the list, not just the one that did. The card names no
   // filter, so a Clear that undid only one of two active filters would leave it on screen looking
-  // like it had failed.
+  // like it had failed. Inside a saved view, Clear leaves the view instead: clearing would write
+  // through and empty the view itself.
   const clearFilters = useCallback(() => {
+    if (activeViewId !== null) {
+      selectView(null);
+      return;
+    }
     clearLabelFilter();
     clearProjectFilters();
-  }, [clearLabelFilter, clearProjectFilters]);
+  }, [activeViewId, clearLabelFilter, clearProjectFilters, selectView]);
 
   return (
     <SidebarEmptyStateCard

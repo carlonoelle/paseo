@@ -1221,6 +1221,20 @@ export const es: TranslationResources = {
         label: "Proyecto",
         all: "Todos los proyectos",
       },
+      view: {
+        label: "Vista",
+        heading: "Vistas",
+        all: "Todos los espacios de trabajo",
+        save: "Guardar como vista",
+        saveConfirm: "Guardar vista",
+        name: "Nombre de la vista",
+        rename: "Renombrar vista",
+        renameConfirm: "Renombrar",
+        delete: "Eliminar vista",
+        deleteMessage:
+          '¿Eliminar "{{name}}"? La barra lateral volverá a mostrar todos los espacios de trabajo.',
+        deleteConfirm: "Eliminar",
+      },
     },
     filterEmpty: {
       title: "Ningún espacio de trabajo coincide",

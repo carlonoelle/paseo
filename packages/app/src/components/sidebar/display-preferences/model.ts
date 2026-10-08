@@ -8,6 +8,7 @@ import {
   useSidebarViewStore,
   type SidebarGroupMode,
   type SidebarLabelFilter,
+  type SidebarSavedView,
 } from "@/stores/sidebar-view-store";
 import { DEFAULT_SIDEBAR_CHECKS_DISPLAY, type SidebarChecksDisplay } from "./checks-display";
 import { DEFAULT_SIDEBAR_ROW_ITEMS, type SidebarRowItem, type SidebarRowItems } from "./row-items";
@@ -37,6 +38,12 @@ export interface SidebarDisplayPreferences {
   labelFilter: SidebarLabelFilter;
   toggleLabelFilter: (name: string) => void;
   clearLabelFilter: () => void;
+  savedViews: readonly SidebarSavedView[];
+  activeViewId: string | null;
+  saveView: (name: string) => void;
+  selectView: (id: string | null) => void;
+  renameView: (id: string, name: string) => void;
+  deleteView: (id: string) => void;
 }
 
 /**
@@ -59,6 +66,12 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
   const labelFilter = useSidebarViewStore((state) => state.labelFilter);
   const toggleLabelFilter = useSidebarViewStore((state) => state.toggleLabelFilter);
   const clearLabelFilter = useSidebarViewStore((state) => state.clearLabelFilter);
+  const savedViews = useSidebarViewStore((state) => state.savedViews);
+  const activeViewId = useSidebarViewStore((state) => state.activeViewId);
+  const saveView = useSidebarViewStore((state) => state.saveView);
+  const selectView = useSidebarViewStore((state) => state.selectView);
+  const renameView = useSidebarViewStore((state) => state.renameView);
+  const deleteView = useSidebarViewStore((state) => state.deleteView);
 
   const {
     settings: {
@@ -123,6 +136,12 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       labelFilter,
       toggleLabelFilter,
       clearLabelFilter,
+      savedViews,
+      activeViewId,
+      saveView,
+      selectView,
+      renameView,
+      deleteView,
     }),
     [
       grouping,
@@ -144,6 +163,12 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       labelFilter,
       toggleLabelFilter,
       clearLabelFilter,
+      savedViews,
+      activeViewId,
+      saveView,
+      selectView,
+      renameView,
+      deleteView,
     ],
   );
 }

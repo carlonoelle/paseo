@@ -1192,6 +1192,20 @@ export const ko: TranslationResources = {
         label: "프로젝트",
         all: "모든 프로젝트",
       },
+      view: {
+        label: "보기",
+        heading: "보기",
+        all: "모든 워크스페이스",
+        save: "보기로 저장",
+        saveConfirm: "보기 저장",
+        name: "보기 이름",
+        rename: "보기 이름 변경",
+        renameConfirm: "이름 변경",
+        delete: "보기 삭제",
+        deleteMessage:
+          '"{{name}}"을(를) 삭제할까요? 사이드바에 다시 모든 워크스페이스가 표시됩니다.',
+        deleteConfirm: "삭제",
+      },
     },
     filterEmpty: {
       title: "일치하는 워크스페이스가 없습니다",

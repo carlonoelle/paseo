@@ -4,6 +4,7 @@ import { persist, type StateStorage } from "zustand/middleware";
 import { z } from "zod";
 import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
+import { generateUuidFromGlobalCrypto } from "@/utils/client-id";
 
 export type SidebarGroupMode = "project" | "status";
 
@@ -34,6 +35,56 @@ export function hasActiveSidebarLabelFilter(filter: SidebarLabelFilter): boolean
   return filter.labels.length > 0;
 }
 
+interface SidebarFilters {
+  hostFilters: string[];
+  projectFilters: string[];
+  labelFilter: SidebarLabelFilter;
+}
+
+/**
+ * A named set of the sidebar's filters.
+ *
+ * While a view is active, every filter change writes through to it, so the view is always what
+ * the sidebar is showing and there is no separate "save changes" step to forget.
+ */
+export interface SidebarSavedView extends SidebarFilters {
+  id: string;
+  name: string;
+}
+
+export function normalizeSidebarViewName(name: string): string {
+  return name.trim();
+}
+
+const NO_FILTERS: SidebarFilters = {
+  hostFilters: [],
+  projectFilters: [],
+  labelFilter: { labels: [] },
+};
+
+function pickFilters(state: SidebarFilters): SidebarFilters {
+  return {
+    hostFilters: state.hostFilters,
+    projectFilters: state.projectFilters,
+    labelFilter: state.labelFilter,
+  };
+}
+
+/** Applies a filter change and copies the result into the active view, if there is one. */
+function withFilters(
+  state: SidebarViewStoreState,
+  patch: Partial<SidebarFilters>,
+): Partial<SidebarViewStoreState> {
+  if (state.activeViewId === null) return patch;
+  const filters = pickFilters({ ...state, ...patch });
+  return {
+    ...patch,
+    savedViews: state.savedViews.map((view) =>
+      view.id === state.activeViewId ? { ...view, ...filters } : view,
+    ),
+  };
+}
+
 /**
  * Include/exclude toggle over an allowlist, shared by the host and project filters.
  *
@@ -61,6 +112,9 @@ interface SidebarViewStoreState {
    */
   projectFilters: string[];
   labelFilter: SidebarLabelFilter;
+  savedViews: SidebarSavedView[];
+  /** The view the filters write through to. `null` is the unnamed, ad-hoc filter. */
+  activeViewId: string | null;
   setGroupMode: (mode: SidebarGroupMode) => void;
   toggleHostFilter: (serverId: string) => void;
   clearHostFilters: () => void;
@@ -70,6 +124,12 @@ interface SidebarViewStoreState {
   clearLabelFilter: () => void;
   reconcileLabelFilter: (labels: readonly string[]) => void;
   reconcileHostFilters: (serverIds: readonly string[]) => void;
+  /** Saves the current filters under `name` and makes the new view active. */
+  saveView: (name: string) => void;
+  /** Loads a view's filters, or with `null` leaves the active view and clears every filter. */
+  selectView: (id: string | null) => void;
+  renameView: (id: string, name: string) => void;
+  deleteView: (id: string) => void;
 }
 
 interface SidebarViewPersistedState {
@@ -77,11 +137,20 @@ interface SidebarViewPersistedState {
   hostFilters: string[];
   projectFilters: string[];
   labelFilter: SidebarLabelFilter;
+  savedViews: SidebarSavedView[];
+  activeViewId: string | null;
 }
 
 const PersistedSidebarGroupModeSchema = z.enum(["project", "status", "label"]);
 const SidebarLabelFilterSchema = z.object({
   labels: z.array(z.string()),
+});
+const SidebarSavedViewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hostFilters: z.array(z.string()),
+  projectFilters: z.array(z.string()),
+  labelFilter: SidebarLabelFilterSchema,
 });
 const SidebarViewPersistedStateSchema = z.strictObject({
   groupMode: PersistedSidebarGroupModeSchema.optional(),
@@ -90,6 +159,8 @@ const SidebarViewPersistedStateSchema = z.strictObject({
   projectFilters: z.array(z.string()).optional(),
   groupModeByServerId: z.record(z.string(), PersistedSidebarGroupModeSchema).optional(),
   labelFilter: SidebarLabelFilterSchema.optional(),
+  savedViews: z.array(SidebarSavedViewSchema).optional(),
+  activeViewId: z.string().nullable().optional(),
 });
 
 type SidebarViewStorageState = z.infer<typeof SidebarViewPersistedStateSchema>;
@@ -126,6 +197,8 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
+      savedViews: [],
+      activeViewId: null,
     };
   }
   const state = result.data;
@@ -137,8 +210,23 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
+      savedViews: [],
+      activeViewId: null,
     };
   }
+
+  const savedViews = (state.savedViews ?? []).map(
+    (view): SidebarSavedView => ({
+      id: view.id,
+      name: view.name,
+      hostFilters: view.hostFilters,
+      projectFilters: view.projectFilters,
+      labelFilter: normalizeSidebarLabelFilter(view.labelFilter),
+    }),
+  );
+  const activeViewId = savedViews.some((view) => view.id === state.activeViewId)
+    ? (state.activeViewId ?? null)
+    : null;
 
   return {
     groupMode: state.groupMode === "status" ? "status" : "project",
@@ -147,6 +235,8 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
     labelFilter: state.labelFilter
       ? normalizeSidebarLabelFilter(state.labelFilter)
       : emptyLabelFilter(),
+    savedViews,
+    activeViewId,
   };
 }
 
@@ -182,22 +272,31 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
+      savedViews: [],
+      activeViewId: null,
       setGroupMode: (mode) => set({ groupMode: mode }),
       toggleHostFilter: (serverId) =>
-        set((state) => ({ hostFilters: toggleFilterEntry(state.hostFilters, serverId) })),
-      clearHostFilters: () => set({ hostFilters: [] }),
+        set((state) =>
+          withFilters(state, { hostFilters: toggleFilterEntry(state.hostFilters, serverId) }),
+        ),
+      clearHostFilters: () => set((state) => withFilters(state, { hostFilters: [] })),
       toggleProjectFilter: (viewKey) =>
-        set((state) => ({ projectFilters: toggleFilterEntry(state.projectFilters, viewKey) })),
-      clearProjectFilters: () => set({ projectFilters: [] }),
+        set((state) =>
+          withFilters(state, {
+            projectFilters: toggleFilterEntry(state.projectFilters, viewKey),
+          }),
+        ),
+      clearProjectFilters: () => set((state) => withFilters(state, { projectFilters: [] })),
       toggleLabelFilter: (name) =>
         set((state) => {
           const key = workspaceLabelKey(name);
           const labels = state.labelFilter.labels.includes(key)
             ? state.labelFilter.labels.filter((label) => label !== key)
             : [...state.labelFilter.labels, key];
-          return { labelFilter: { ...state.labelFilter, labels } };
+          return withFilters(state, { labelFilter: { ...state.labelFilter, labels } });
         }),
-      clearLabelFilter: () => set({ labelFilter: emptyLabelFilter() }),
+      clearLabelFilter: () =>
+        set((state) => withFilters(state, { labelFilter: emptyLabelFilter() })),
       reconcileLabelFilter: (labels) =>
         set((state) => {
           const available = new Set(labels.map(workspaceLabelKey));
@@ -205,7 +304,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
             (label) => label === SIDEBAR_UNLABELLED_LABEL_KEY || available.has(label),
           );
           if (next.length === state.labelFilter.labels.length) return state;
-          return { labelFilter: { labels: next } };
+          return withFilters(state, { labelFilter: { labels: next } });
         }),
       reconcileHostFilters: (serverIds) =>
         set((state) => {
@@ -217,8 +316,40 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
           if (next.length === state.hostFilters.length) {
             return state;
           }
-          return { hostFilters: next };
+          return withFilters(state, { hostFilters: next });
         }),
+      saveView: (name) =>
+        set((state) => {
+          const normalized = normalizeSidebarViewName(name);
+          if (!normalized) return state;
+          const view: SidebarSavedView = {
+            id: generateUuidFromGlobalCrypto(),
+            name: normalized,
+            ...pickFilters(state),
+          };
+          return { savedViews: [...state.savedViews, view], activeViewId: view.id };
+        }),
+      selectView: (id) =>
+        set((state) => {
+          const view = id === null ? null : state.savedViews.find((entry) => entry.id === id);
+          if (!view) return { activeViewId: null, ...NO_FILTERS };
+          return { activeViewId: view.id, ...pickFilters(view) };
+        }),
+      renameView: (id, name) =>
+        set((state) => {
+          const normalized = normalizeSidebarViewName(name);
+          if (!normalized) return state;
+          return {
+            savedViews: state.savedViews.map((view) =>
+              view.id === id ? { ...view, name: normalized } : view,
+            ),
+          };
+        }),
+      deleteView: (id) =>
+        set((state) => ({
+          savedViews: state.savedViews.filter((view) => view.id !== id),
+          ...(state.activeViewId === id ? { activeViewId: null, ...NO_FILTERS } : {}),
+        })),
     }),
     {
       name: SIDEBAR_VIEW_STORAGE_KEY,
@@ -232,6 +363,8 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
         hostFilters: state.hostFilters,
         projectFilters: state.projectFilters,
         labelFilter: state.labelFilter,
+        savedViews: state.savedViews,
+        activeViewId: state.activeViewId,
       }),
       migrate: migrateSidebarViewState,
     },

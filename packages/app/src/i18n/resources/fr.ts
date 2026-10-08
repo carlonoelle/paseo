@@ -1212,6 +1212,20 @@ export const fr: TranslationResources = {
         label: "Projet",
         all: "Tous les projets",
       },
+      view: {
+        label: "Vue",
+        heading: "Vues",
+        all: "Tous les espaces de travail",
+        save: "Enregistrer comme vue",
+        saveConfirm: "Enregistrer la vue",
+        name: "Nom de la vue",
+        rename: "Renommer la vue",
+        renameConfirm: "Renommer",
+        delete: "Supprimer la vue",
+        deleteMessage:
+          "Supprimer « {{name}} » ? La barre latérale affichera de nouveau tous les espaces de travail.",
+        deleteConfirm: "Supprimer",
+      },
     },
     filterEmpty: {
       title: "Aucun espace de travail ne correspond",

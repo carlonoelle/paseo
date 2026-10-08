@@ -1211,6 +1211,20 @@ export const ptBR: TranslationResources = {
         label: "Projeto",
         all: "Todos os projetos",
       },
+      view: {
+        label: "Visualização",
+        heading: "Visualizações",
+        all: "Todos os espaços de trabalho",
+        save: "Salvar como visualização",
+        saveConfirm: "Salvar visualização",
+        name: "Nome da visualização",
+        rename: "Renomear visualização",
+        renameConfirm: "Renomear",
+        delete: "Excluir visualização",
+        deleteMessage:
+          'Excluir "{{name}}"? A barra lateral voltará a mostrar todos os espaços de trabalho.',
+        deleteConfirm: "Excluir",
+      },
     },
     filterEmpty: {
       title: "Nenhum espaço de trabalho corresponde",
