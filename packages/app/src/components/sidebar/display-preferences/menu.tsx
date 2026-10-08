@@ -64,20 +64,15 @@ import type { WorkspaceTitleSource } from "@/hooks/use-settings";
 import { SIDEBAR_CHECKS_DISPLAYS, type SidebarChecksDisplay } from "./checks-display";
 import { useSidebarDisplayPreferences, type SidebarTrailingChoice } from "./model";
 import { SIDEBAR_ROW_ITEMS, type SidebarRowItem } from "./row-items";
+import { MENU_WIDTH, mutedIconMapping, OPTION_ICON_SIZE } from "./menu-metrics";
 import { useWorkspaceLabelProjection } from "@/workspace-labels";
 import { WorkspaceLabelDot } from "@/workspace-labels/swatch";
 import { WorkspaceLabelManagerModal } from "@/workspace-labels/manager-modal";
-
-const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const ThemedSettings2 = withUnistyles(Settings2);
 /** CI's mark: the subject of the checks row, and the shape the icon-only option leaves behind. */
 const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedCircle = withUnistyles(Circle);
-
-/** Fits the item's 16pt leading slot with a hair of room, matching the trailing check. */
-const OPTION_ICON_SIZE = 14;
-const MENU_WIDTH = 232;
 
 const VIEWS_PAGE_ID = "views";
 const VIEW_SAVE_PAGE_ID = "viewSave";

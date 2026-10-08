@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactElement } from "react";
+import { useCallback, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Text } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -13,15 +13,15 @@ import {
 } from "@/components/ui/menu";
 import { isWeb } from "@/constants/platform";
 import { useSidebarViewStore, type SidebarSavedView } from "@/stores/sidebar-view-store";
-import type { Theme } from "@/styles/theme";
-
-const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+import {
+  MENU_WIDTH,
+  mutedIconMapping,
+  OPTION_ICON_SIZE,
+} from "@/components/sidebar/display-preferences/menu-metrics";
 
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedBookmark = withUnistyles(Bookmark);
 
-const OPTION_ICON_SIZE = 14;
-const MENU_WIDTH = 232;
 const VIEW_LEADING = <ThemedBookmark size={OPTION_ICON_SIZE} uniProps={mutedIconMapping} />;
 
 /**
@@ -35,7 +35,16 @@ export function SidebarViewSwitcher({ title }: { title: string }): ReactElement 
   const savedViews = useSidebarViewStore((state) => state.savedViews);
   const activeViewId = useSidebarViewStore((state) => state.activeViewId);
   const selectView = useSidebarViewStore((state) => state.selectView);
+  const hasFilters = useSidebarViewStore(
+    (state) =>
+      state.hostFilters.length > 0 ||
+      state.projectFilters.length > 0 ||
+      state.labelFilter.labels.length > 0,
+  );
   const activeView = savedViews.find((view) => view.id === activeViewId) ?? null;
+  // An ad-hoc filter is not "all workspaces", so the row is only checked when nothing narrows the
+  // list, and picking it clears the ad-hoc filter as its label says.
+  const showsAll = activeViewId === null && !hasFilters;
   const selectAll = useCallback(() => selectView(null), [selectView]);
 
   const triggerStyle = useCallback(
@@ -65,11 +74,7 @@ export function SidebarViewSwitcher({ title }: { title: string }): ReactElement 
         sheetTitle={t("sidebar.display.view.heading")}
         testID="sidebar-view-switcher-content"
       >
-        <MenuItem
-          selected={activeViewId === null}
-          onSelect={selectAll}
-          testID="sidebar-view-switcher-all"
-        >
+        <MenuItem selected={showsAll} onSelect={selectAll} testID="sidebar-view-switcher-all">
           {t("sidebar.display.view.all")}
         </MenuItem>
         <MenuSeparator />
@@ -104,11 +109,10 @@ export function SidebarViewOption({
     () => onSelect(leaveOnReselect && selected ? null : view.id),
     [leaveOnReselect, onSelect, selected, view.id],
   );
-  const leading = useMemo(() => VIEW_LEADING, []);
   return (
     <MenuItem
       selected={selected}
-      leading={leading}
+      leading={VIEW_LEADING}
       closeOnSelect={closeOnSelect}
       onSelect={handleSelect}
       testID={`sidebar-view-option-${view.id}`}

@@ -1195,7 +1195,7 @@ export const ar: TranslationResources = {
         rename: "إعادة تسمية العرض",
         renameConfirm: "إعادة تسمية",
         delete: "حذف العرض",
-        deleteMessage: 'هل تريد حذف "{{name}}"؟ سيعود الشريط الجانبي إلى عرض كل مساحات العمل.',
+        deleteMessage: "هل تريد حذف «{{name}}»؟ سيعود الشريط الجانبي إلى عرض كل مساحات العمل.",
         deleteConfirm: "حذف",
       },
     },

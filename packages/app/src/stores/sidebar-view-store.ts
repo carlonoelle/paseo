@@ -70,17 +70,23 @@ function pickFilters(state: SidebarFilters): SidebarFilters {
   };
 }
 
-/** Applies a filter change and copies the result into the active view, if there is one. */
+/**
+ * Applies a user's filter change and copies the changed facet into the active view, if there is
+ * one.
+ *
+ * Only the facet in `patch` is written. The live filters can be narrower than the view's, because
+ * reconciling against hosts and labels that are online right now trims them without touching the
+ * view, and a cold start must not bake that trim into the view through an unrelated toggle.
+ */
 function withFilters(
   state: SidebarViewStoreState,
   patch: Partial<SidebarFilters>,
 ): Partial<SidebarViewStoreState> {
   if (state.activeViewId === null) return patch;
-  const filters = pickFilters({ ...state, ...patch });
   return {
     ...patch,
     savedViews: state.savedViews.map((view) =>
-      view.id === state.activeViewId ? { ...view, ...filters } : view,
+      view.id === state.activeViewId ? { ...view, ...patch } : view,
     ),
   };
 }
@@ -304,7 +310,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
             (label) => label === SIDEBAR_UNLABELLED_LABEL_KEY || available.has(label),
           );
           if (next.length === state.labelFilter.labels.length) return state;
-          return withFilters(state, { labelFilter: { labels: next } });
+          return { labelFilter: { labels: next } };
         }),
       reconcileHostFilters: (serverIds) =>
         set((state) => {
@@ -316,7 +322,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
           if (next.length === state.hostFilters.length) {
             return state;
           }
-          return withFilters(state, { hostFilters: next });
+          return { hostFilters: next };
         }),
       saveView: (name) =>
         set((state) => {

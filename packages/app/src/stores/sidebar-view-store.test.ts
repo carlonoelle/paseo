@@ -427,6 +427,33 @@ describe("sidebar view store", () => {
       });
     });
 
+    it("keeps an offline label in the view when reconciling trims the live filter", () => {
+      state().toggleLabelFilter("client-x");
+      state().saveView("Freelance");
+
+      state().reconcileLabelFilter([]);
+      state().toggleProjectFilter("project-a");
+
+      expect(state().labelFilter.labels).toEqual([]);
+      expect(state().savedViews[0]).toMatchObject({
+        labelFilter: { labels: ["client-x"] },
+        projectFilters: ["project-a"],
+      });
+      state().selectView(null);
+      state().selectView(state().savedViews[0].id);
+      expect(state().labelFilter.labels).toEqual(["client-x"]);
+    });
+
+    it("keeps a removed host in the view when reconciling the live filter", () => {
+      state().toggleHostFilter("host-b");
+      state().saveView("Freelance");
+
+      state().reconcileHostFilters(["host-a"]);
+
+      expect(state().hostFilters).toEqual([]);
+      expect(state().savedViews[0].hostFilters).toEqual(["host-b"]);
+    });
+
     it("carries saved views through the version migration", () => {
       const view = {
         id: "view-a",
