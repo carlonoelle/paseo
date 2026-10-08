@@ -426,6 +426,14 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
     try {
       const client = new ClaudeAgentClient({
         logger,
+        discoverModels: async () => [
+          {
+            value: "mythos",
+            resolvedModel: "claude-mythos-5-1",
+            displayName: "Mythos",
+            description: "",
+          },
+        ],
         resolveBinary: async () => "/test/claude/bin",
         resolveVersion: async () => "2.1.219",
         runtimeSettings: { env: { CLAUDE_CONFIG_DIR: emptyConfigDir } },
@@ -473,6 +481,14 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
     try {
       const client = new ClaudeAgentClient({
         logger,
+        discoverModels: async () => [
+          {
+            value: "mythos",
+            resolvedModel: "claude-mythos-5-1",
+            displayName: "Mythos",
+            description: "",
+          },
+        ],
         resolveVersion: async () => {
           throw new Error("unrecognized version output");
         },
@@ -496,6 +512,14 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
     try {
       const client = new ClaudeAgentClient({
         logger,
+        discoverModels: async () => [
+          {
+            value: "mythos",
+            resolvedModel: "claude-mythos-5-1",
+            displayName: "Mythos",
+            description: "",
+          },
+        ],
         resolveBinary: async () => "/test/claude/bin",
         resolveVersion: async () => "2.1.293",
         runtimeSettings: { env: { CLAUDE_CONFIG_DIR: emptyConfigDir } },

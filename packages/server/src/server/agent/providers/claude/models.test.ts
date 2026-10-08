@@ -13,6 +13,8 @@ import {
   parseClaudeCodeVersion,
   resolveClaudeDisabledThinkingForModel,
 } from "./model-manifest.js";
+import { discoverClaudeModels } from "./model-discovery.js";
+import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { findClaudeModel, getClaudeModels, normalizeClaudeRuntimeModelId } from "./models.js";
 
 const createdClaudeConfigDirs: string[] = [];
@@ -43,6 +45,14 @@ function createCatalogClient(claudeCodeVersion = "2.1.293"): ClaudeAgentClient {
   return new ClaudeAgentClient({
     logger: createTestLogger(),
     resolveVersion: async () => claudeCodeVersion,
+    discoverModels: async () => [
+      {
+        value: "mythos",
+        resolvedModel: "claude-mythos-5-1",
+        displayName: "Mythos",
+        description: "",
+      },
+    ],
   });
 }
 
@@ -223,6 +233,116 @@ describe("getClaudeModels", () => {
 });
 
 describe("ClaudeAgentClient.fetchCatalog", () => {
+  it.each([
+    { value: "mythos", resolvedModel: "claude-mythos-5-1", expected: true },
+    { value: "claude-mythos-5-1", expected: true },
+    { value: "claude-mythos-5-1[1m]", expected: true },
+    { value: "global.anthropic.claude-mythos-5-1", expected: true },
+    { value: "mythos", expected: false },
+    { value: "mythos", resolvedModel: "claude-mythos-5-2", expected: false },
+    { value: "claude-mythos-5-1", resolvedModel: "claude-fable-5-1", expected: false },
+  ])(
+    "uses advertised identity $value / $resolvedModel to gate Mythos",
+    async ({ value, resolvedModel, expected }) => {
+      const configDir = await createClaudeConfigDir({});
+      const client = new ClaudeAgentClient({
+        logger: createTestLogger(),
+        resolveVersion: async () => "2.1.293",
+        runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+        discoverModels: async () => [
+          { value, resolvedModel, displayName: "Untrusted label", description: "" },
+        ],
+      });
+      const { models } = await client.fetchCatalog({
+        scope: "workspace",
+        cwd: configDir,
+        force: false,
+      });
+      expect(models.find((model) => model.id === "claude-mythos-5-1")).toEqual(
+        expected ? findClaudeModel("claude-mythos-5-1") : undefined,
+      );
+    },
+  );
+
+  it("preserves the curated catalog and explicitly configured models after discovery failure", async () => {
+    const configDir = await createClaudeConfigDir({ model: "claude-mythos-5-1" });
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      resolveVersion: async () => "2.1.293",
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+      discoverModels: async () => {
+        throw new Error("discovery unavailable");
+      },
+    });
+    const { models } = await client.fetchCatalog({
+      scope: "workspace",
+      cwd: configDir,
+      force: false,
+    });
+    expect(models.filter((model) => model.id !== "claude-mythos-5-1")).toEqual(
+      getClaudeModels("2.1.293").filter((model) => model.id !== "claude-mythos-5-1"),
+    );
+    expect(models.find((model) => model.id === "claude-mythos-5-1")?.description).toBe(
+      "From Claude settings.json model",
+    );
+  });
+
+  it("omits unconfirmed Mythos after a failed probe and retries on refresh", async () => {
+    const configDir = await createClaudeConfigDir({});
+    let fail = true;
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      resolveVersion: async () => "2.1.293",
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+      discoverModels: async () => {
+        if (fail) throw new Error("discovery unavailable");
+        return [
+          {
+            value: "mythos",
+            resolvedModel: "claude-mythos-5-1",
+            displayName: "Mythos",
+            description: "",
+          },
+        ];
+      },
+    });
+    const options = { scope: "workspace" as const, cwd: configDir, force: true };
+    expect(
+      (await client.fetchCatalog(options)).models.some((model) => model.id === "claude-mythos-5-1"),
+    ).toBe(false);
+    fail = false;
+    expect(
+      (await client.fetchCatalog(options)).models.find((model) => model.id === "claude-mythos-5-1"),
+    ).toEqual(findClaudeModel("claude-mythos-5-1"));
+  });
+
+  it("keeps the curated catalog when discovery does not advertise Mythos", async () => {
+    const configDir = await createClaudeConfigDir({});
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      resolveVersion: async () => "2.1.293",
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: configDir } },
+      discoverModels: async () => [
+        {
+          value: "opus",
+          resolvedModel: "claude-opus-5-5",
+          displayName: "Opus",
+          description: "Latest",
+        },
+      ],
+    });
+    const { models } = await client.fetchCatalog({
+      scope: "workspace",
+      cwd: configDir,
+      force: false,
+    });
+    expect(models.map((model) => model.id)).toEqual(
+      getClaudeModels("2.1.293")
+        .filter((model) => model.id !== "claude-mythos-5-1")
+        .map((model) => model.id),
+    );
+  });
+
   it("appends concrete models from Claude settings.json", async () => {
     const configDir = await createClaudeConfigDir({
       model: "us.anthropic.claude-opus-4-7[1m]",
@@ -300,6 +420,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
     const client = new ClaudeAgentClient({
       logger: createTestLogger(),
       resolveVersion: async () => "2.1.280",
+      discoverModels: async () => [],
       runtimeSettings: { env: { CLAUDE_CONFIG_DIR: providerConfigDir } },
     });
 
@@ -772,4 +893,78 @@ describe("Claude Mythos 5.1 catalog", () => {
       expect(normalizeClaudeManifestModelId(id)).toBeNull();
     },
   );
+});
+
+describe("Claude model discovery process", () => {
+  it("does not send a prompt or persist a session and closes after discovery", async () => {
+    let closed = false;
+    let promptEnded: Promise<IteratorResult<unknown>> | undefined;
+    const advertised: ModelInfo[] = [
+      {
+        value: "mythos",
+        resolvedModel: "claude-mythos-5-1",
+        displayName: "Mythos",
+        description: "",
+      },
+    ];
+    const models = await discoverClaudeModels(
+      { resolveBinary: async () => "/claude", env: { CLAUDE_CONFIG_DIR: "/provider-config" } },
+      (input) => {
+        expect(input.options).toMatchObject({
+          pathToClaudeCodeExecutable: "/claude",
+          env: { CLAUDE_CONFIG_DIR: "/provider-config" },
+          persistSession: false,
+          tools: [],
+          mcpServers: {},
+          strictMcpConfig: true,
+          settingSources: ["user"],
+          settings: { disableAllHooks: true },
+        });
+        if (typeof input.prompt === "string") throw new Error("unexpected inference prompt");
+        promptEnded = input.prompt[Symbol.asyncIterator]().next();
+        return {
+          supportedModels: async () => advertised,
+          close: () => {
+            closed = true;
+          },
+        };
+      },
+    );
+    expect(models).toEqual(advertised);
+    expect(closed).toBe(true);
+    await expect(promptEnded).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("times out and closes an unresponsive discovery process", async () => {
+    let closed = false;
+    await expect(
+      discoverClaudeModels({ resolveBinary: async () => "/claude", env: {} }, () => ({
+        supportedModels: () => new Promise(() => {}),
+        close: () => {
+          closed = true;
+        },
+      })),
+    ).rejects.toThrow("Claude model discovery timed out");
+    expect(closed).toBe(true);
+  }, 10_000);
+
+  it("closes a stalled probe when its refresh is canceled", async () => {
+    const controller = new AbortController();
+    const failure = new Error("refresh canceled");
+    let closed = false;
+    const result = discoverClaudeModels(
+      { resolveBinary: async () => "/claude", env: {}, signal: controller.signal },
+      () => ({
+        supportedModels: () => {
+          controller.abort(failure);
+          return new Promise(() => {});
+        },
+        close: () => {
+          closed = true;
+        },
+      }),
+    );
+    await expect(result).rejects.toBe(failure);
+    expect(closed).toBe(true);
+  });
 });
